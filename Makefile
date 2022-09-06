@@ -3,7 +3,7 @@ CFLAGS=-c -Wall
 LDFLAGS=
 SOURCES=main.c
 OBJECTS=$(SOURCES:.c=.o)
-EXECUTABLE=hello
+EXECUTABLE=server
 
 all: $(SOURCES) $(EXECUTABLE)
 	
@@ -14,4 +14,4 @@ $(EXECUTABLE): $(OBJECTS)
 	$(CC) $(CFLAGS) $< -o $@
 
 clean:
-	rm -rf *.o hello
+	rm -rf *.o $(EXECUTABLE)
