@@ -10,9 +10,13 @@
 
 #include <pthread.h>
 
+#include "server.h"
+
 struct conn_data_s {
     int conn;
-    void (*handler_func)(int conn, char *buf, size_t len);
+    server_listen_handler_f handler;
+    void *meta;
+    size_t metalen;
 };
 
 int server_create(char *addr, int port)
@@ -80,7 +84,7 @@ static void server_conn_close(struct conn_data_s *conn_data)
     free(conn_data);
 }
 
-static void server_conn_handler(void *data)
+static void *server_conn_handler(void *data)
 {
     struct conn_data_s *conn_data = (struct conn_data_s *) data;
     ssize_t received = 0;
@@ -96,7 +100,7 @@ static void server_conn_handler(void *data)
     }
 
     /* Handle received data */
-    conn_data->handler_func(conn_data->conn, buf, received);
+    conn_data->handler(conn_data->conn, buf, received, conn_data->meta, conn_data->metalen);
 
 exit:
 
@@ -106,16 +110,18 @@ exit:
     /* Exit the thread */
     pthread_exit(NULL);
 
+    return NULL;
+
 }
 
-int server_listen(int sockfd, void (*handler_func)(int conn, char *buf, size_t len))
+int server_listen(int sockfd, server_listen_handler_f handler, void *meta, size_t metalen)
 {
     int conn = 0;
     int result = 0;
     pthread_t thread = 0;
 
     /* Check if handler function is valid */
-    if(handler_func == NULL)
+    if(handler == NULL)
     {
         fprintf(stderr, "server: Data handler function is NULL\r\n");
 
@@ -144,7 +150,9 @@ int server_listen(int sockfd, void (*handler_func)(int conn, char *buf, size_t l
 
         /* Set conn data */
         conn_data->conn = conn;
-        conn_data->handler_func = handler_func;
+        conn_data->handler = handler;
+        conn_data->meta = meta;
+        conn_data->metalen = metalen;
 
         /* Create separate thread for connection */
         result = pthread_create(&thread, NULL, server_conn_handler, conn_data);

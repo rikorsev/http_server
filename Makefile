@@ -1,7 +1,7 @@
 CC=gcc
 CFLAGS=-c -Wall
 LDFLAGS=
-SOURCES=main.c server.c
+SOURCES=main.c server.c http.c
 OBJECTS=$(SOURCES:.c=.o)
 EXECUTABLE=server
 
