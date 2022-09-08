@@ -26,4 +26,11 @@ void http_table_free(struct http_table_s *table);
 int http_table_register_resource(struct http_table_s *table, char *path, http_resource_handler_f handler);
 void http_handler(int conn, char *buf, size_t len, void *meta, size_t metalen);
 
+int http_send_ok(int conn);
+int http_send_not_found(int conn);
+int http_send_not_implemented(int conn);
+int http_send_bad_request(int conn);
+
+
+
 #endif

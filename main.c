@@ -7,16 +7,14 @@ void http_index_get(int conn)
 {
     #define RESPBUF_LEN 1024
 
-    char respbuf[RESPBUF_LEN] = "HTTP/1.1 200 OK\nContent-type: text/html\n\n";
+    char respbuf[RESPBUF_LEN];
     int sendlen = 0;
     int readlen = 0;
     FILE *file = NULL;
 
-    /* Send responce header */
-    sendlen = server_send(conn, respbuf, sizeof(respbuf));
-    if(sendlen < 0)
+    if(http_send_ok(conn) < 0)
     {
-        fprintf(stderr, "main: Fail to send responce\r\n");
+        fprintf(stderr, "main: Fail to send ok responce\r\n");
 
         return;
     }
@@ -55,6 +53,8 @@ void http_index_handler(int conn, enum method_e method, char *buf, size_t len)
 
         default:
             fprintf(stderr, "http: Wrong method for the resource\r\n");
+
+            http_send_not_implemented(conn);
 
     }
 }

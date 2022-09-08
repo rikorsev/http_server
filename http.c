@@ -105,7 +105,24 @@ static enum method_e str_to_method(char *methodstr)
     return METHOD_INVALID;
 }
 
-static void http_send_not_found(int conn)
+int http_send_ok(int conn)
+{
+    char respbuf[] = "HTTP/1.1 200 OK\nContent-type: text/html\n\n";
+    int sendlen = 0;
+
+    /* Send responce header */
+    sendlen = server_send(conn, respbuf, sizeof(respbuf));
+    if(sendlen < 0)
+    {
+        fprintf(stderr, "http: Fail to send responce\r\n");
+
+        return -1;
+    }
+
+    return 0;
+}
+
+int http_send_not_found(int conn)
 {
     char respbuf[] = "HTTP/1.1 404 Not Found\n\nNot Found";
     int sendlen = 0;
@@ -116,8 +133,50 @@ static void http_send_not_found(int conn)
     sendlen = server_send(conn, respbuf, sizeof(respbuf));
     if(sendlen < 0)
     {
-        fprintf(stderr, "main: Fail to send responce\r\n");
+        fprintf(stderr, "http: Fail to send responce\r\n");
+
+        return -1;
     }
+
+    return 0;
+}
+
+int http_send_not_implemented(int conn)
+{
+    char respbuf[] = "HTTP/1.1 501 Not Implemented\n\nNot Implemented";
+    int sendlen = 0;
+    
+    printf("http: 404: not implemented\r\n");
+
+    /* Send responce header */
+    sendlen = server_send(conn, respbuf, sizeof(respbuf));
+    if(sendlen < 0)
+    {
+        fprintf(stderr, "http: Fail to send responce\r\n");
+
+        return -1;
+    }
+
+    return 0;
+}
+
+int http_send_bad_request(int conn)
+{
+    char respbuf[] = "HTTP/1.1 501 Not Implemented\n\nNot Implemented";
+    int sendlen = 0;
+    
+    printf("http: 404: not implemented\r\n");
+
+    /* Send responce header */
+    sendlen = server_send(conn, respbuf, sizeof(respbuf));
+    if(sendlen < 0)
+    {
+        fprintf(stderr, "http: Fail to send responce\r\n");
+
+        return -1;
+    }
+
+    return 0;
 }
 
 void http_handler(int conn, char *buf, size_t len, void *meta, size_t metalen)
@@ -129,12 +188,31 @@ void http_handler(int conn, char *buf, size_t len, void *meta, size_t metalen)
 
     printf("%s", buf);
 
-    /* Parse Header */
+    /* Get method */
     methodstr = strtok(buf, " ");
-    path = strtok(NULL, " ");
+    if(methodstr == NULL)
+    {
+        fprintf(stderr, "http: Fail to parse method\r\n");
+
+        http_send_bad_request(conn);
+
+        return;
+    }
 
     printf("METHOD: %s\r\n", methodstr);
-    printf("RESOURCE: %s\r\n", path);
+
+    /* Get path */
+    path = strtok(NULL, " ");
+    if(path == NULL)
+    {
+        fprintf(stderr, "http: Fail to parse path\r\n");
+
+        http_send_bad_request(conn);
+
+        return;
+    }
+
+    printf("PATH: %s\r\n", path);
 
     /* Searching for requested resource */
     int i = 0;
