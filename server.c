@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 #include <pthread.h>
 
@@ -33,10 +34,10 @@ int server_create(char *addr, int port)
         return -errno;
     }
 
-    /* Set socket options */
+    /* Set socket options reuse address to true */
     if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0)
     {
-        fprintf(stderr, "server: Fail to set socket options. Result: %s\r\n", strerror(errno));
+        fprintf(stderr, "server: Fail to set socket reuseaddr option. Result: %s\r\n", strerror(errno));
 
         return -errno;
     }
@@ -74,6 +75,8 @@ int server_create(char *addr, int port)
 
 static void server_conn_close(struct conn_data_s *conn_data)
 {
+    printf("server: Connection %d closed\r\n", conn_data->conn);
+
     if(close(conn_data->conn) < 0)
     {
         fprintf(stderr, "server: Fail close connection. Result: %s\r\n", strerror(errno));
@@ -87,20 +90,22 @@ static void *server_conn_handler(void *data)
     struct conn_data_s *conn_data = (struct conn_data_s *) data;
     ssize_t received = 0;
     char buf[1024] = {0}; /** @todo: data chunking */
+    int keepalive = 0;
 
     /* Recive data */
-    received = recv(conn_data->conn, buf, sizeof(buf), 0);
-    if(received < 0)
+    do
     {
-        fprintf(stderr, "server: Fail to receive data. Result: %s\r\n", strerror(errno));
+        received = recv(conn_data->conn, buf, sizeof(buf), 0);
+        if(received < 0)
+        {
+            fprintf(stderr, "server: Fail to receive data. Result: %s\r\n", strerror(errno));
 
-        goto exit;
-    }
+            break;
+        }
 
-    /* Handle received data */
-    conn_data->handler(conn_data->conn, buf, received);
-
-exit:
+        /* Handle received data */
+        keepalive = conn_data->handler(conn_data->conn, buf, received);
+    } while(keepalive > 0);
 
     /* Close connection */
     server_conn_close(conn_data);
@@ -109,7 +114,6 @@ exit:
     pthread_exit(NULL);
 
     return NULL;
-
 }
 
 int server_listen(int sockfd, server_listen_handler_f handler)
@@ -117,6 +121,7 @@ int server_listen(int sockfd, server_listen_handler_f handler)
     int conn = 0;
     int result = 0;
     pthread_t thread = 0;
+    struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
 
     /* Check if handler function is valid */
     if(handler == NULL)
@@ -133,6 +138,16 @@ int server_listen(int sockfd, server_listen_handler_f handler)
         if(conn < 0)
         {
             fprintf(stderr, "Connection fail. Result: %s\r\n", strerror(errno));
+
+            return -errno;
+        }
+
+        printf("server: New connection %d\r\n", conn);
+
+        /* Set connection timout for recv call */
+        if(setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+        {
+            fprintf(stderr, "server: Fail to set socket rcvtimeo option. Result: %s\r\n", strerror(errno));
 
             return -errno;
         }

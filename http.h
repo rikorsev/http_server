@@ -11,7 +11,8 @@
  * @param buf[in] - bufer that contains incoming data
  * @param len[in] - lenght of incoming data
  * 
+ * @retval 1 if connection shall remains open, 0 otherwise
  **/
-void http_handler(int conn, char *buf, size_t len);
+int http_handler(int conn, char *buf, size_t len);
 
 #endif

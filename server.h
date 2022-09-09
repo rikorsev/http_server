@@ -9,8 +9,10 @@
  * @param buf[in] - buffer with incoming data
  * @param len[in] - lengh of incoming data
  * 
+ * @retval shall return 1 to keep connection open after handling the request
+ * or 0 othervise
  **/
-typedef void (*server_listen_handler_f)(int conn, char *buf, size_t len);
+typedef int (*server_listen_handler_f)(int conn, char *buf, size_t len);
 
 /**
  * @brief Creates new listener for server based on socket

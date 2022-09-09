@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
 
 #include <libgen.h>
 
@@ -15,6 +16,13 @@ enum resource_type_e
     RESOURCE_TYPE_TEXT_JSON,
     RESOURCE_TYPE_FILE,
     RESOURCE_TYPE_INVALID = -1
+};
+
+struct http_req_s
+{
+    char method[8];
+    char path[128];
+    int keepalive;
 };
 
 static int http_send_ok(int conn)
@@ -254,104 +262,161 @@ static char *http_header_generate(char *filename)
     return header;
 }
 
-void http_handler(int conn, char *buf, size_t len)
+static int http_keepalive_parse(char *buf, size_t len, struct http_req_s *req)
 {
-    char *methodstr = NULL;
-    char *path = NULL;
-    char *header = NULL;
-    FILE *file = NULL;
-    char relpath[128] = {0};
+    if(buf == NULL || req == NULL)
+    {
+        return -EINVAL;
+    }
 
-    printf("\r\n%s\r\n", buf);
+    req->keepalive = 0;
+
+    if(strstr(buf, "Connection: keep-alive") != NULL)
+    {
+        req->keepalive = 1;
+    }
+
+    return 0;
+}
+
+int http_request_parse(char *buf, size_t len, struct http_req_s *req)
+{
+    int result = 0;
+    char *dupbuf = strdup(buf);
+    char *token = NULL;
+
+    printf("BUF: %s\r\n", buf);
+
+    if(dupbuf == NULL)
+    {
+        fprintf(stderr, "http: Fail to duplicate incoming buffer\r\n");
+
+        return -ENOMEM;
+    }
 
     /* Get method */
-    methodstr = strtok(buf, " ");
-    if(methodstr == NULL)
+    token = strtok(dupbuf, " ");
+    if(token == NULL)
     {
         fprintf(stderr, "http: Fail to parse method\r\n");
 
-        http_send_bad_request(conn);
+        result = -ENOMSG;
 
-        return;
+        goto exit;
     }
 
-    printf("METHOD: %s\r\n", methodstr);
-
-    /* Our server supports only GET method, so if not,
-        retuen 501 error then */
-    if(strcmp(methodstr, "GET") != 0)
-    {
-        fprintf(stderr, "http: %s not implemented\r\n", methodstr);
-
-        http_send_not_implemented(conn);
-
-        return;
-    }
+    strcpy(req->method, token);
 
     /* Get path */
-    path = strtok(NULL, " ");
-    if(path == NULL)
+    token = strtok(NULL, " ");
+    if(token == NULL)
     {
         fprintf(stderr, "http: Fail to parse path\r\n");
 
-        http_send_bad_request(conn);
+        result = -ENOMSG;
 
-        return;
+        goto exit;
     }
+
+    strcpy(&req->path[1], token);
+
+    /* Add . at the begining of path to make it relative */
+    req->path[0] = '.';
 
     /* Replase / with index.html */
-    if(strcmp(path, "/") == 0)
+    if(strcmp(req->path, "./") == 0)
     {
-        strcpy(path, "/index.html");
+        strcpy(req->path, "./index.html");
     }
 
-    /* convert resource path to relavive path */
-    sprintf(relpath, ".%s", path);
-
-    printf("PATH: %s\r\n", relpath);
-
     /* Check for ../ and ~/ sumbols in path */
-    if(strstr(relpath, "../") != NULL || strstr(relpath, "~/") != NULL)
+    if(strstr(req->path, "../") != NULL || strstr(req->path, "~/") != NULL)
     {
         fprintf(stderr, "http: Path conatins ../ or ~/\r\n");
 
+        result = -EINVAL;
+
+        goto exit;
+    }
+
+    result = http_keepalive_parse(buf, len, req);
+
+exit:
+    free(dupbuf);
+
+    return result;
+}
+
+int http_handler(int conn, char *buf, size_t len)
+{
+    char *header = NULL;
+
+    struct http_req_s req = {0};
+
+    FILE *file = NULL;
+    int result = 0;
+
+    result = http_request_parse(buf, len, &req);
+    if(result < 0)
+    {
+        fprintf(stderr, "http: fail to parse request. Result: %d", result);
+
         http_send_bad_request(conn);
 
-        return;
+        return result;
+    }
+
+    printf("METHOD: %s\r\n", req.method);
+    printf("PATH: %s\r\n", req.path);
+    printf("KEEPALIFE: %d\r\n", req.keepalive);
+
+    /* Our server supports only GET method, so if not,
+        retuen 501 error then */
+    if(strcmp(req.method, "GET") != 0)
+    {
+        fprintf(stderr, "http: %s not implemented\r\n", req.method);
+
+        http_send_not_implemented(conn);
+
+        return -ENOMSG;
     }
 
     /* Open the resource file */
-    file = fopen(relpath, "r");
+    file = fopen(req.path, "r");
     if (file == NULL)
     {
-        fprintf(stderr, "http: Fail to open %s\r\n", relpath);
+        fprintf(stderr, "http: Fail to open %s\r\n", req.path);
 
         /* send 404 */
         http_send_not_found(conn);
 
-        return;
+        return -ENOENT;
     }
 
     /* Generate header */
-    header = http_header_generate(basename(relpath));
+    header = http_header_generate(basename(req.path));
     if(header == NULL)
     {
-        fprintf(stderr, "http: Fail to generate header %s\r\n", relpath);
+        fprintf(stderr, "http: Fail to generate header %s\r\n", req.path);
 
         fclose(file);
 
-        return;
+        return -ENOMEM;
     }
 
-    if(http_send_file(conn, header, file) < 0)
+    /* Send requested file */
+    result = http_send_file(conn, header, file);
+    if(result < 0)
     {
-        fprintf(stderr, "http: Fail to send %s\r\n", relpath);
-    }
-    else
-    {
-        printf("http: Request handled successfully\r\n");
+        fprintf(stderr, "http: Fail to send %s. Result\r\n", req.path);
+
+        fclose(file);
+        free(header);
+
+        return 0;
     }
 
-    fclose(file);
-    free(header);
+    printf("http: Request handled successfully\r\n");
+
+    return req.keepalive;
 }
