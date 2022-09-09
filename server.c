@@ -123,7 +123,7 @@ int server_listen(int sockfd, server_listen_handler_f handler)
     {
         fprintf(stderr, "server: Data handler function is NULL\r\n");
 
-        return -1;
+        return -EINVAL;
     }
 
     while(1)
@@ -143,7 +143,7 @@ int server_listen(int sockfd, server_listen_handler_f handler)
         {
             fprintf(stderr, "Connection data allocation fail");
 
-            return -1;
+            return -ENOMEM;
         }
 
         /* Set conn data */
@@ -159,14 +159,14 @@ int server_listen(int sockfd, server_listen_handler_f handler)
             /* Close connection */
             server_conn_close(conn_data);
 
-            return -1;
+            return result;
         }
     }
 
     return 0;
 }
 
-int server_send(int conn, char *buf, size_t len)
+int server_send(int conn, void *buf, size_t len)
 {
     int sendlen = send(conn, buf, len, 0);
     if(sendlen < 0)
@@ -181,6 +181,8 @@ int server_send(int conn, char *buf, size_t len)
 
 int server_close(int sockfd)
 {
+    /** @todo: close all open threads ? */
+
     /* Close socket */
     if(close(sockfd) < 0)
     {
