@@ -1,65 +1,68 @@
+#include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <argp.h>
+#include <unistd.h>
 
 #include "server.h"
 #include "http.h"
 
-void http_index_get(int conn)
+const char *argp_program_version = "0.1.0";
+const char *argp_program_bug_address = "<rikorsev@gmail.com>";
+ 
+/* Program documentation. */
+static char doc[] = "Simple HTTP server writen on C";
+
+/* A description of the arguments we accept. */
+
+/* The options we understand. */
+static struct argp_option options[] = {
+  {"root", 'r', "root", 0, "Rood directory for resources" },
+  {"addr", 'a', "addr", 0, "IP address of the server"},
+  {"port", 'p', "port", 0, "TCP port to access server" },
+  { 0 }
+};
+
+/* Used by main to communicate with parse_opt. */
+struct arguments
 {
-    #define RESPBUF_LEN 1024
+    char *root;
+    char *addr;
+    int port;
+};
 
-    char respbuf[RESPBUF_LEN];
-    int sendlen = 0;
-    int readlen = 0;
-    FILE *file = NULL;
-
-    if(http_send_ok(conn) < 0)
-    {
-        fprintf(stderr, "main: Fail to send ok responce\r\n");
-
-        return;
-    }
-
-    /* Open index file */
-    file = fopen("index.html", "r");
-    if (file == NULL) 
-    {
-        fprintf(stderr, "main: Fail to open index.html\r\n");
-
-        return;
-    }
-
-    /* Send index file */
-    while((readlen = fread(respbuf, sizeof(char), RESPBUF_LEN, file)) != 0)
-    {
-        sendlen = server_send(conn, respbuf, readlen);
-        if(sendlen < 0)
-        {
-            fprintf(stderr, "main: Fail to send index\r\n");
-
-            return;
-        }
-    }
-
-    fclose(file);
-}
-
-void http_index_handler(int conn, enum method_e method, char *buf, size_t len)
+/* Parse a single option. */
+static error_t parse_opt (int key, char *arg, struct argp_state *state)
 {
-    switch(method)
+    /* Get the input argument from argp_parse, which we
+        know is a pointer to our arguments structure. */
+    struct arguments *arguments = state->input;
+
+    switch (key)
     {
-        case METHOD_GET:
-            http_index_get(conn);
+        case 'r':
+            arguments->root = arg;
+            break;
+        
+        case 'a':
+            arguments->addr = arg;
+            break;
+
+        case 'p':
+            arguments->port = atoi(arg);
             break;
 
         default:
-            fprintf(stderr, "http: Wrong method for the resource\r\n");
-
-            http_send_not_implemented(conn);
-
+            return ARGP_ERR_UNKNOWN;
     }
+
+    return 0;
 }
 
-static int start_server(char *addr, int port, server_listen_handler_f handler, void *meta, size_t metalen)
+/* argp parser. */
+static struct argp argp = { options, parse_opt, NULL, doc };
+
+static int start_server(char *addr, int port, server_listen_handler_f handler)
 {
     int sockfd = 0;
     sockfd = server_create(addr, port);
@@ -70,7 +73,7 @@ static int start_server(char *addr, int port, server_listen_handler_f handler, v
         return sockfd;
     }
 
-    if(server_listen(sockfd, handler, meta, metalen) < 0)
+    if(server_listen(sockfd, handler) < 0)
     {
         fprintf(stderr, "main: Fail listen\r\n");
 
@@ -82,39 +85,31 @@ static int start_server(char *addr, int port, server_listen_handler_f handler, v
     return 0;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
-    /* Create http table */
-    #define NUM_OF_HTTP_RESOURCES 5
-    struct http_table_s *http_table = http_table_create(NUM_OF_HTTP_RESOURCES);
-    if(http_table == NULL)
+    struct arguments arguments;
+
+    /* Default values. */
+    arguments.root = ".";
+    arguments.addr = "127.0.0.1";
+    arguments.port = 80;
+
+    /* Parse our arguments; every option seen by parse_opt will
+        be reflected in arguments. */
+    argp_parse(&argp, argc, argv, 0, 0, &arguments);
+
+    printf("root %s address %s port %d\r\n", arguments.root, arguments.addr, arguments.port);
+
+    /* Change directory to specefied */
+    if(chdir(arguments.root) < 0)
     {
-        fprintf(stderr, "main: Fail to create HTTP table\r\n");
+        fprintf(stderr, "main: Fail to change directory. Result: %s\r\n", strerror(errno));
 
-        return -1;
-    }
-
-    /* Fill it with resources */
-    if(http_table_register_resource(http_table, "/", http_index_handler) < 0)
-    {
-        fprintf(stderr, "main: Fail to register resource\r\n");
-
-        http_table_free(http_table);
-
-        return -1;
-    }
-
-    if(http_table_register_resource(http_table, "/index.html", http_index_handler) < 0)
-    {
-        fprintf(stderr, "main: Fail to register resource\r\n");
-
-        http_table_free(http_table);
-
-        return -1;
+        return -errno;
     }
 
     /* Start server */
-    if(start_server("127.0.0.1", 80, http_handler, http_table, sizeof(struct http_table_s)) < 0)
+    if(start_server(arguments.addr, arguments.port, http_handler) < 0)
     {
         fprintf(stderr, "main: fail to start server\r\n");
 

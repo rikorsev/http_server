@@ -3,115 +3,27 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include <libgen.h>
+
 #include "server.h"
 #include "http.h"
 
-struct http_table_s *http_table_create(int resources_num)
+enum resource_type_e
 {
-    struct http_table_s *table = NULL;
+    RESOURCE_TYPE_TEXT_HTTP,
+    RESOURCE_TYPE_TEXT_XML,
+    RESOURCE_TYPE_TEXT_JSON,
+    RESOURCE_TYPE_FILE,
+    RESOURCE_TYPE_INVALID = -1
+};
 
-    /* Allocate memory for http table */
-    table = malloc(sizeof(struct http_table_s));
-    if(table == NULL)
-    {
-        fprintf(stderr, "http: fail to allocate mamory for http table\r\n");
-
-        return NULL;
-    }
-
-    /* Allocate memory for http resources */
-    table->res = malloc(resources_num * sizeof(struct http_resource_s));
-    if(table->res == NULL)
-    {
-        fprintf(stderr, "http: fail to allocate mamory for http resources\r\n");
-
-        free(table);
-
-        return NULL;
-    }
-
-    /* Set number of resources */
-    table->num = resources_num;
-
-    /* Set resource content to zero */
-    memset(table->res, 0, resources_num * sizeof(struct http_resource_s));
-
-    return table;
-}
-
-void http_table_free(struct http_table_s *table)
+static int http_send_ok(int conn)
 {
-    free(table->res);
-    free(table);
-}
-
-int http_table_register_resource(struct http_table_s *table, char *path, http_resource_handler_f handler)
-{
-    /* Ceck if path or handler is NULL */
-    if(path == NULL || handler == NULL)
-    {
-        fprintf(stderr, "http: path or handler NULL\r\n");
-
-        return -1;
-    }
-
-    /* Check for duplications */
-    for(int i = 0; i < table->num; i++)
-    {
-        if(table->res[i].path == NULL)
-        {
-            continue;
-        }
-
-        if(strcmp(table->res[i].path, path) == 0)
-        {
-            fprintf(stderr, "http: resources duplication\r\n");
-
-            return -1;
-        }
-    }
-
-    /* Add resource at free slot */
-    int i = 0;
-    for(; i < table->num; i++)
-    {
-        if(table->res[i].handler == NULL)
-        {
-            table->res[i].path = path;
-            table->res[i].handler = handler;
-
-            break;
-        }
-    }
-
-    /* if i == to table num it means that there is no free space for new resource */
-    if(i == table->num)
-    {
-        fprintf(stderr, "http: no space available for new resource\r\n");
-
-        return -1;
-    }
-
-    return 0;
-}
-
-static enum method_e str_to_method(char *methodstr)
-{
-    if(strcmp(methodstr, "GET") == 0)
-    {
-        return METHOD_GET;
-    }
-    
-    return METHOD_INVALID;
-}
-
-int http_send_ok(int conn)
-{
-    char respbuf[] = "HTTP/1.1 200 OK\nContent-type: text/html\n\n";
+    char respbuf[] = "HTTP/1.1 200 OK\n";
     int sendlen = 0;
 
     /* Send responce header */
-    sendlen = server_send(conn, respbuf, sizeof(respbuf));
+    sendlen = server_send(conn, respbuf, strlen(respbuf));
     if(sendlen < 0)
     {
         fprintf(stderr, "http: Fail to send responce\r\n");
@@ -122,7 +34,7 @@ int http_send_ok(int conn)
     return 0;
 }
 
-int http_send_not_found(int conn)
+static int http_send_not_found(int conn)
 {
     char respbuf[] = "HTTP/1.1 404 Not Found\n\nNot Found";
     int sendlen = 0;
@@ -141,12 +53,12 @@ int http_send_not_found(int conn)
     return 0;
 }
 
-int http_send_not_implemented(int conn)
+static int http_send_not_implemented(int conn)
 {
     char respbuf[] = "HTTP/1.1 501 Not Implemented\n\nNot Implemented";
     int sendlen = 0;
     
-    printf("http: 404: not implemented\r\n");
+    printf("http: 501: not implemented\r\n");
 
     /* Send responce header */
     sendlen = server_send(conn, respbuf, sizeof(respbuf));
@@ -160,12 +72,12 @@ int http_send_not_implemented(int conn)
     return 0;
 }
 
-int http_send_bad_request(int conn)
+static int http_send_bad_request(int conn)
 {
-    char respbuf[] = "HTTP/1.1 501 Not Implemented\n\nNot Implemented";
+    char respbuf[] = "HTTP/1.1 400 Bad Request\n\nBad Request";
     int sendlen = 0;
     
-    printf("http: 404: not implemented\r\n");
+    printf("http: 400: not implemented\r\n");
 
     /* Send responce header */
     sendlen = server_send(conn, respbuf, sizeof(respbuf));
@@ -179,14 +91,180 @@ int http_send_bad_request(int conn)
     return 0;
 }
 
-void http_handler(int conn, char *buf, size_t len, void *meta, size_t metalen)
+static int http_send_file(int conn, char *header, FILE *file)
+{
+    #define BUF_LEN 1024
+
+    char buf[BUF_LEN];
+    int sendlen = 0;
+    int readlen = 0;
+
+    /* Check output arguments */
+    if(header == NULL || file == NULL)
+    {
+        fprintf(stderr, "http: Invalid arguments\r\n");
+
+        return -1;
+    }
+
+    /* Send OK status */
+    if(http_send_ok(conn) < 0)
+    {
+        fprintf(stderr, "http: Fail to send ok responce\r\n");
+
+        return -1;
+    }
+
+    /* Send header */
+    sendlen = server_send(conn, header, strlen(header));
+    if(sendlen < 0)
+    {
+        fprintf(stderr, "http: Fail to send header\r\n");
+
+        return -1;
+    }
+
+    /* Send index file */
+    while((readlen = fread(buf, sizeof(char), BUF_LEN, file)) != 0)
+    {
+        sendlen = server_send(conn, buf, readlen);
+        if(sendlen < 0)
+        {
+            fprintf(stderr, "main: Fail to send index\r\n");
+
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static enum resource_type_e http_resource_type_get(char *filepath)
+{
+    char *filebase = NULL;
+    char *extension = NULL;
+    enum resource_type_e type = RESOURCE_TYPE_INVALID;
+
+    char *dupfilepath = strdup(filepath);
+
+    filebase = strtok(dupfilepath, ".");
+    if(filebase == NULL)
+    {
+        fprintf(stderr, "http: Fail to parse filebase\r\n");
+
+        goto exit;
+    }
+    
+    printf("filebase %s\r\n", filebase);
+
+    extension = strtok(NULL, ".");
+    if(extension == NULL)
+    {
+        fprintf(stderr, "http: Fail to parse extension\r\n");
+
+        goto exit;
+    }
+
+    printf("extension %s\r\n", extension);
+
+    if(strcmp(extension, "html") == 0)
+    {
+        type = RESOURCE_TYPE_TEXT_HTTP;
+
+        goto exit;
+
+    }
+
+    if(strcmp(extension, "xml") == 0)
+    {
+        type = RESOURCE_TYPE_TEXT_XML;
+
+        goto exit;
+
+    }
+
+    if(strcmp(extension, "json") == 0)
+    {
+        type = RESOURCE_TYPE_TEXT_JSON;
+
+        goto exit;
+    }
+
+    /* Bu default type is file */
+    type = RESOURCE_TYPE_FILE;
+
+exit:
+
+    free(dupfilepath);
+
+    return type;
+}
+
+static char *http_header_generate(char *filename)
+{
+    char *header = NULL;
+
+    static const char text_html[] = "text/html";
+    static const char text_xml[] = "text/xml";
+    static const char text_json[] = "text/json";
+    static const char text_header_format[] = "Content-type: %s\n\n";
+    static const char file_header_format[] = "Content-Disposition: attachment; filename=%s\n\n";
+
+    enum resource_type_e type = http_resource_type_get(filename);
+
+    if(filename == NULL)
+    {
+        fprintf(stderr, "http: invalid parametr\r\n");
+
+        return NULL;
+    }
+
+    /* Invalid resource type. Return NULL */
+    if(type == RESOURCE_TYPE_INVALID)
+    {
+        return NULL;
+    }
+
+    /* Brutal :) */
+    /* Allocate memory for header */
+    header = malloc(128);
+    if(header == NULL)
+    {
+        fprintf(stderr, "http: Fail to allocate memory for header\r\n");
+
+        return NULL;
+    }
+
+    switch(type)
+    {
+        case RESOURCE_TYPE_TEXT_HTTP:
+            sprintf(header, text_header_format, text_html);
+            break;
+        
+        case RESOURCE_TYPE_TEXT_XML:
+            sprintf(header, text_header_format, text_xml);
+            break;
+
+        case RESOURCE_TYPE_TEXT_JSON:
+            sprintf(header, text_header_format, text_json);
+            break;
+
+        default:
+            sprintf(header, file_header_format, filename);
+    }
+
+    printf("HEADER: %s\r\n", header);
+
+    return header;
+}
+
+void http_handler(int conn, char *buf, size_t len)
 {
     char *methodstr = NULL;
     char *path = NULL;
-
-    struct http_table_s *table = (struct http_table_s *) meta;
-
-    printf("%s", buf);
+    char *header = NULL;
+    FILE *file = NULL;
+    char relpath[128] = {0};
 
     /* Get method */
     methodstr = strtok(buf, " ");
@@ -201,6 +279,17 @@ void http_handler(int conn, char *buf, size_t len, void *meta, size_t metalen)
 
     printf("METHOD: %s\r\n", methodstr);
 
+    /* Our server supports only GET method, so if not,
+        retuen 501 error then */
+    if(strcmp(methodstr, "GET") != 0)
+    {
+        fprintf(stderr, "http: %s not implemented\r\n", methodstr);
+
+        http_send_not_implemented(conn);
+
+        return;
+    }
+
     /* Get path */
     path = strtok(NULL, " ");
     if(path == NULL)
@@ -214,28 +303,45 @@ void http_handler(int conn, char *buf, size_t len, void *meta, size_t metalen)
 
     printf("PATH: %s\r\n", path);
 
-    /* Searching for requested resource */
-    int i = 0;
-    for(; i < table->num; i++)
+    /// @todo: add check for ../ and ~/ sumbols
+
+    /* Replase / to index.html */
+    if(strcmp(path, "/") == 0)
     {
-
-        if(table->res[i].path == NULL)
-        {
-            continue;
-        }
-
-        if(strcmp(table->res[i].path, path) == 0)
-        {
-            table->res[i].handler(conn, str_to_method(methodstr), buf, len);
-
-            break;
-        }
+        strcpy(path, "/index.html");
     }
 
-    /* If required resourse were not found */
-    if(i == table->num)
+    /* convert resource path to relavive path */
+    sprintf(relpath, ".%s", path);
+
+    /* Open the resource file */
+    file = fopen(relpath, "r");
+    if (file == NULL)
     {
+        fprintf(stderr, "http: Fail to open %s\r\n", relpath);
+
         /* send 404 */
         http_send_not_found(conn);
+
+        return;
     }
+
+    /* Generate header */
+    header = http_header_generate(basename(relpath));
+    if(header == NULL)
+    {
+        fprintf(stderr, "http: Fail to generate header %s\r\n", relpath);
+
+        fclose(file);
+
+        return;
+    }
+
+    if(http_send_file(conn, header, file) < 0)
+    {
+        fprintf(stderr, "http: Fail to send %s\r\n", relpath);
+    }
+
+    fclose(file);
+    free(header);
 }

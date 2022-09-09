@@ -15,8 +15,6 @@
 struct conn_data_s {
     int conn;
     server_listen_handler_f handler;
-    void *meta;
-    size_t metalen;
 };
 
 int server_create(char *addr, int port)
@@ -46,7 +44,7 @@ int server_create(char *addr, int port)
     /* Set address */
     sockaddr.sin_family = AF_INET;
     sockaddr.sin_port = htons(80);
-    if(inet_aton(addr, &sockaddr.sin_addr.s_addr) < 0)
+    if(inet_aton(addr, (struct in_addr *)&sockaddr.sin_addr.s_addr) < 0)
     {
         fprintf(stderr, "server: Fail set address. Result: %s\r\n", strerror(errno));
 
@@ -100,7 +98,7 @@ static void *server_conn_handler(void *data)
     }
 
     /* Handle received data */
-    conn_data->handler(conn_data->conn, buf, received, conn_data->meta, conn_data->metalen);
+    conn_data->handler(conn_data->conn, buf, received);
 
 exit:
 
@@ -114,7 +112,7 @@ exit:
 
 }
 
-int server_listen(int sockfd, server_listen_handler_f handler, void *meta, size_t metalen)
+int server_listen(int sockfd, server_listen_handler_f handler)
 {
     int conn = 0;
     int result = 0;
@@ -151,8 +149,6 @@ int server_listen(int sockfd, server_listen_handler_f handler, void *meta, size_
         /* Set conn data */
         conn_data->conn = conn;
         conn_data->handler = handler;
-        conn_data->meta = meta;
-        conn_data->metalen = metalen;
 
         /* Create separate thread for connection */
         result = pthread_create(&thread, NULL, server_conn_handler, conn_data);
