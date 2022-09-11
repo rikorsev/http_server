@@ -1,3 +1,9 @@
+/**
+ * @file http.h
+ * @brief This module responsible for handling HTTP requests from client
+ * 
+ */
+
 #ifndef HTTP_H_
 #define HTTP_H_
 

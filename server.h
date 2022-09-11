@@ -1,3 +1,14 @@
+/**
+ * @file server.h
+ * @brief This module responsible for maintaining communication via sockets
+ * 
+ * The module do following:
+ *  - create bind and listen socket, 
+ *  - wait for new connection from client and create sepatate thread to handle it
+ *  - pass recived data to upper layer/protocol (HTTP, etc)
+ *  - provide interface to send a data to client
+ **/
+
 #ifndef SERVER_H_
 #define SERVER_H_
 
