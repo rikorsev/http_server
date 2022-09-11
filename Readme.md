@@ -27,6 +27,7 @@ The following options are available:
 | CONFIG_KEEPALIVE_TIMEOUT_SEC | Define timeout for keep-alive in seconds |
 | CONFIG_INPUT_BUFF_LEN | Define size of buffer for input (from client to server) data in bytes |
 | CONFIG_OUTPUT_BUFF_LEN | Define size of buffer for output (rom server to client) data in bytes |
+| CONFIG_MAX_PATH_SIZE | Define maxinum path size in HTTP request |
 
 ## Install
 

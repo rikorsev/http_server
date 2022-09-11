@@ -25,7 +25,7 @@ enum resource_type_e
 struct http_req_s
 {
     char method[8];
-    char path[128];
+    char path[CONFIG_MAX_PATH_SIZE];
     enum resource_type_e type;
     int keepalive;
 };
@@ -321,6 +321,15 @@ int http_request_parse(char *buf, size_t len, struct http_req_s *req)
         LOGERR("Fail to parse path");
 
         result = -ENOMSG;
+
+        goto exit;
+    }
+
+    if(strlen(token) > CONFIG_MAX_PATH_SIZE)
+    {
+        LOGERR("Path is to big (%lu bytes)", strlen(token));
+
+        result = -ENOMEM;
 
         goto exit;
     }
