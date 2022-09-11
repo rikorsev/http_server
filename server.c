@@ -13,6 +13,9 @@
 
 #include "server.h"
 #include "config.h"
+#include "log.h"
+
+#define MODULE_NAME "server"
 
 struct conn_data_s {
     int conn;
@@ -30,7 +33,7 @@ int server_create(char *addr, int port)
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if(sockfd < 0)
     {
-        fprintf(stderr, "server: Fail to create socket. Result: %s\r\n", strerror(errno));
+        LOGERR("Fail to create socket. Result: %s", strerror(errno));
 
         return -errno;
     }
@@ -38,7 +41,7 @@ int server_create(char *addr, int port)
     /* Set socket options reuse address to true */
     if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0)
     {
-        fprintf(stderr, "server: Fail to set socket reuseaddr option. Result: %s\r\n", strerror(errno));
+        LOGERR("Fail to set socket reuseaddr option. Result: %s", strerror(errno));
 
         return -errno;
     }
@@ -48,7 +51,7 @@ int server_create(char *addr, int port)
     sockaddr.sin_port = htons(port);
     if(inet_aton(addr, (struct in_addr *)&sockaddr.sin_addr.s_addr) < 0)
     {
-        fprintf(stderr, "server: Fail set address. Result: %s\r\n", strerror(errno));
+        LOGERR("Fail set address. Result: %s", strerror(errno));
 
         return -errno;
     }
@@ -56,7 +59,7 @@ int server_create(char *addr, int port)
     /* Bind socket and address */
     if(bind(sockfd, (struct sockaddr *) &sockaddr, sizeof(sockaddr)) < 0)
     {
-        fprintf(stderr, "server: Fail to bind. Result: %s\r\n", strerror(errno));
+        LOGERR("Fail to bind. Result: %s", strerror(errno));
 
         return -errno;
     }
@@ -64,23 +67,23 @@ int server_create(char *addr, int port)
     /* Start listening */
     if (listen(sockfd, SOMAXCONN) < 0)
     {
-        fprintf(stderr, "server: Fail to listen. Result: %s\r\n", strerror(errno));
+        LOGERR("Fail to listen. Result: %s\r\n", strerror(errno));
 
         return -errno;
     }
 
-    printf("server: Has been started. Address %s, port %d...\r\n", addr, port);
+    LOGINF("Has been started. Address %s, port %d", addr, port);
 
     return sockfd;
 }
 
 static void server_conn_close(struct conn_data_s *conn_data)
 {
-    printf("server: Connection %d closed\r\n", conn_data->conn);
+    LOGINF("Connection %d closed", conn_data->conn);
 
     if(close(conn_data->conn) < 0)
     {
-        fprintf(stderr, "server: Fail close connection. Result: %s\r\n", strerror(errno));
+        LOGERR("Fail close connection. Result: %s", strerror(errno));
     }
 
     free(conn_data);
@@ -99,7 +102,7 @@ static void *server_conn_handler(void *data)
         received = recv(conn_data->conn, buf, sizeof(buf), 0);
         if(received < 0)
         {
-            fprintf(stderr, "server: Fail to receive data. Result: %s\r\n", strerror(errno));
+            LOGERR("Fail to receive data. Result: %s", strerror(errno));
 
             break;
         }
@@ -126,7 +129,7 @@ int server_listen(int sockfd, server_listen_handler_f handler)
     /* Check if handler function is valid */
     if(handler == NULL)
     {
-        fprintf(stderr, "server: Data handler function is NULL\r\n");
+        LOGERR("Data handler function is NULL");
 
         return -EINVAL;
     }
@@ -137,17 +140,17 @@ int server_listen(int sockfd, server_listen_handler_f handler)
         conn = accept(sockfd, NULL, NULL);
         if(conn < 0)
         {
-            fprintf(stderr, "Connection fail. Result: %s\r\n", strerror(errno));
+            LOGERR("Connection fail. Result: %s", strerror(errno));
 
             return -errno;
         }
 
-        printf("server: New connection %d\r\n", conn);
+        LOGINF("New connection %d", conn);
 
         /* Set connection timout for recv call */
         if(setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
         {
-            fprintf(stderr, "server: Fail to set connection rcvtimeo option. Result: %s\r\n", strerror(errno));
+            LOGERR("Fail to set connection rcvtimeo option. Result: %s", strerror(errno));
 
             return -errno;
         }
@@ -156,7 +159,7 @@ int server_listen(int sockfd, server_listen_handler_f handler)
         struct conn_data_s *conn_data = malloc(sizeof(struct conn_data_s));
         if(conn_data == NULL)
         {
-            fprintf(stderr, "server: Connection data allocation fail");
+            LOGERR("Connection data allocation fail");
 
             return -ENOMEM;
         }
@@ -169,7 +172,7 @@ int server_listen(int sockfd, server_listen_handler_f handler)
         result = pthread_create(&thread, NULL, server_conn_handler, conn_data);
         if(result < 0)
         {
-            fprintf(stderr, "server: Fail to create new connection thread. Result %d", result);
+            LOGERR("Fail to create new connection thread. Result %d", result);
 
             /* Close connection */
             server_conn_close(conn_data);
@@ -186,7 +189,7 @@ int server_send(int conn, void *buf, size_t len)
     int sendlen = send(conn, buf, len, 0);
     if(sendlen < 0)
     {
-        fprintf(stderr, "server: Fail to send. Result: %s\r\n", strerror(errno));
+        LOGERR("Fail to send. Result: %s", strerror(errno));
 
         return -errno;
     }
@@ -201,7 +204,7 @@ int server_close(int sockfd)
     /* Close socket */
     if(close(sockfd) < 0)
     {
-        fprintf(stderr, "server: Fail close socket. Result: %s\r\n", strerror(errno));
+        LOGERR("Fail close socket. Result: %s", strerror(errno));
 
         return -errno;
     }

@@ -8,6 +8,9 @@
 
 #include "server.h"
 #include "http.h"
+#include "log.h"
+
+#define MODULE_NAME "http"
 
 enum resource_type_e
 {
@@ -44,7 +47,7 @@ static int http_send_responce(int conn, struct http_resp_s *resp)
     /* Check output arguments */
     if(resp == NULL)
     {
-        fprintf(stderr, "http: Invalid arguments\r\n");
+        LOGERR("Invalid argument");
 
         return -EINVAL;
     }
@@ -53,7 +56,7 @@ static int http_send_responce(int conn, struct http_resp_s *resp)
     sendlen = server_send(conn, resp->status, strlen(resp->status));
     if(sendlen < 0)
     {
-        fprintf(stderr, "http: Fail to send responce. Result: %d\r\n", sendlen);
+        LOGERR("Fail to send responce. Result: %d", sendlen);
 
         return sendlen;
     }
@@ -62,7 +65,7 @@ static int http_send_responce(int conn, struct http_resp_s *resp)
     sendlen = server_send(conn, resp->header, strlen(resp->header));
     if(sendlen < 0)
     {
-        fprintf(stderr, "http: Fail to send header. Result %d\r\n", sendlen);
+        LOGERR("Fail to send header. Result %d", sendlen);
 
         return sendlen;
     }
@@ -75,7 +78,7 @@ static int http_send_responce(int conn, struct http_resp_s *resp)
             sendlen = server_send(conn, buf, readlen);
             if(sendlen < 0)
             {
-                fprintf(stderr, "http: Fail to send file. Result %d\r\n", sendlen);
+                LOGERR("Fail to send file. Result %d", sendlen);
 
                 return sendlen;
             }
@@ -96,13 +99,13 @@ static int http_send_not_found(int conn)
         .file = NULL
     };
 
-    printf("http: 404: page not found\r\n");
+    LOGINF("404: page not found");
 
     /* Send responce header */
     result = http_send_responce(conn, &resp);
     if(result < 0)
     {
-        fprintf(stderr, "http: Fail to send responce. Result: %d\r\n", result);
+        LOGERR("Fail to send responce. Result: %d", result);
 
         return result;
     }
@@ -121,13 +124,13 @@ static int http_send_not_implemented(int conn)
         .file = NULL
     };
 
-    printf("http: 501: not implemented\r\n");
+    LOGINF("501: not implemented");
 
     /* Send responce header */
     result = http_send_responce(conn, &resp);
     if(result < 0)
     {
-        fprintf(stderr, "http: Fail to send responce. Result: %d\r\n", result);
+        LOGERR("Fail to send responce. Result: %d", result);
 
         return result;
     }
@@ -146,13 +149,13 @@ static int http_send_bad_request(int conn)
         .file = NULL
     };
 
-    printf("http: 400: bad request\r\n");
+    LOGINF("400: bad request");
 
     /* Send responce header */
     result = http_send_responce(conn, &resp);
     if(result < 0)
     {
-        fprintf(stderr, "http: Fail to send responce. Result: %d\r\n", result);
+        LOGERR("Fail to send responce. Result: %d", result);
 
         return result;
     }
@@ -171,7 +174,7 @@ static enum resource_type_e http_resource_type_get(char *filepath)
     filebase = strtok(dupfilepath, ".");
     if(filebase == NULL)
     {
-        fprintf(stderr, "http: Fail to parse filebase\r\n");
+        LOGERR("Fail to parse filebase");
 
         goto exit;
     }
@@ -179,7 +182,7 @@ static enum resource_type_e http_resource_type_get(char *filepath)
     extension = strtok(NULL, ".");
     if(extension == NULL)
     {
-        fprintf(stderr, "http: Fail to parse extension\r\n");
+        LOGERR("Fail to parse extension");
 
         goto exit;
     }
@@ -230,7 +233,7 @@ static int http_header_generate(struct http_req_s *req, struct http_resp_s *resp
     
     if(req == NULL)
     {
-        fprintf(stderr, "http: Invalid parametr\r\n");
+        LOGERR("Invalid parametr");
 
         return -EINVAL;
     }
@@ -293,7 +296,7 @@ int http_request_parse(char *buf, size_t len, struct http_req_s *req)
 
     if(dupbuf == NULL)
     {
-        fprintf(stderr, "http: Fail to duplicate incoming buffer\r\n");
+        LOGERR("Fail to duplicate incoming buffer");
 
         return -ENOMEM;
     }
@@ -302,7 +305,7 @@ int http_request_parse(char *buf, size_t len, struct http_req_s *req)
     token = strtok(dupbuf, " ");
     if(token == NULL)
     {
-        fprintf(stderr, "http: Fail to parse method\r\n");
+        LOGERR("Fail to parse method");
 
         result = -ENOMSG;
 
@@ -315,7 +318,7 @@ int http_request_parse(char *buf, size_t len, struct http_req_s *req)
     token = strtok(NULL, " ");
     if(token == NULL)
     {
-        fprintf(stderr, "http: Fail to parse path\r\n");
+        LOGERR("Fail to parse path");
 
         result = -ENOMSG;
 
@@ -336,7 +339,7 @@ int http_request_parse(char *buf, size_t len, struct http_req_s *req)
     /* Check for ../ and ~/ sumbols in path */
     if(strstr(req->path, "../") != NULL || strstr(req->path, "~/") != NULL)
     {
-        fprintf(stderr, "http: Path conatins ../ or ~/\r\n");
+        LOGERR("Path conatins ../ or ~/");
 
         result = -EINVAL;
 
@@ -348,8 +351,8 @@ int http_request_parse(char *buf, size_t len, struct http_req_s *req)
 
     if(RESOURCE_TYPE_INVALID == req->type)
     {
-        fprintf(stderr, "http: Invalid resource type\r\n");
-        
+        LOGERR("Invalid resource type");
+
         result = -EINVAL;
 
         goto exit;
@@ -369,27 +372,27 @@ int http_handler(int conn, char *buf, size_t len)
     struct http_req_s req = {0};
     struct http_resp_s resp = { .status = "HTTP/1.1 200 OK\n" };
 
-    printf("http: Request handling started(conn %d)\r\n", conn);
+    LOGINF("Request handling started(conn %d)", conn);
 
     result = http_request_parse(buf, len, &req);
     if(result < 0)
     {
-        fprintf(stderr, "http: Fail to parse request. Result: %d\r\n", result);
+        LOGERR("Fail to parse request. Result: %d", result);
 
         http_send_bad_request(conn);
 
         return result;
     }
 
-    printf("METHOD: %s\r\n", req.method);
-    printf("PATH: %s\r\n", req.path);
-    printf("KEEPALIFE: %d\r\n", req.keepalive);
+    LOGINF("METHOD: %s", req.method);
+    LOGINF("PATH: %s", req.path);
+    LOGINF("KEEPALIFE: %d", req.keepalive);
 
     /* Our server supports only GET method, so if not,
         retuen 501 error then */
     if(strcmp(req.method, "GET") != 0)
     {
-        fprintf(stderr, "http: %s not implemented\r\n", req.method);
+        LOGERR("%s not implemented\r\n", req.method);
 
         http_send_not_implemented(conn);
 
@@ -400,7 +403,7 @@ int http_handler(int conn, char *buf, size_t len)
     resp.file = fopen(req.path, "r");
     if(resp.file == NULL)
     {
-        fprintf(stderr, "http: Fail to open %s\r\n", req.path);
+        LOGERR("Fail to open %s", req.path);
 
         /* send 404 */
         http_send_not_found(conn);
@@ -412,7 +415,7 @@ int http_handler(int conn, char *buf, size_t len)
     result = http_header_generate(&req, &resp);
     if(result < 0)
     {
-        fprintf(stderr, "http: Fail to generate header. Result %d\r\n", result);
+        LOGERR("Fail to generate header. Result %d", result);
 
         fclose(resp.file);
 
@@ -423,14 +426,14 @@ int http_handler(int conn, char *buf, size_t len)
     result = http_send_responce(conn, &resp);
     if(result < 0)
     {
-        fprintf(stderr, "http: Fail to send responce. Result %d\r\n", result);
+        LOGERR("Fail to send responce. Result %d", result);
 
         fclose(resp.file);
 
         return 0;
     }
 
-    printf("http: Request handled successfully\r\n");
+    LOGINF("Request handled successfully");
 
     return req.keepalive;
 }

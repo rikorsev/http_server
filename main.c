@@ -6,6 +6,9 @@
 
 #include "server.h"
 #include "http.h"
+#include "log.h"
+
+#define MODULE_NAME "main"
 
 const char *argp_program_version = "0.1.0";
 const char *argp_program_bug_address = "<rikorsev@gmail.com>";
@@ -68,14 +71,14 @@ static int start_server(char *addr, int port, server_listen_handler_f handler)
     sockfd = server_create(addr, port);
     if(sockfd < 0)
     {
-        fprintf(stderr, "main: Fail to create new server. Result %d\r\n", sockfd);
+        LOGERR("Fail to create new server. Result %d", sockfd);
 
         return sockfd;
     }
 
     if(server_listen(sockfd, handler) < 0)
     {
-        fprintf(stderr, "main: Fail listen\r\n");
+        LOGERR("Fail to listen");
 
         server_close(sockfd);
 
@@ -98,12 +101,14 @@ int main(int argc, char **argv)
         be reflected in arguments. */
     argp_parse(&argp, argc, argv, 0, 0, &arguments);
 
-    printf("root %s address %s port %d\r\n", arguments.root, arguments.addr, arguments.port);
+    LOGINF("Root: %s", arguments.root);
+    LOGINF("Address: %s", arguments.addr);
+    LOGINF("Port: %d", arguments.port);
 
     /* Change directory to specefied */
     if(chdir(arguments.root) < 0)
     {
-        fprintf(stderr, "main: Fail to change directory. Result: %s\r\n", strerror(errno));
+        LOGERR("Fail to change directory. Result: %s", strerror(errno));
 
         return -errno;
     }
@@ -111,7 +116,7 @@ int main(int argc, char **argv)
     /* Start server */
     if(start_server(arguments.addr, arguments.port, http_handler) < 0)
     {
-        fprintf(stderr, "main: Fail to start server\r\n");
+        LOGERR("Fail to start server");
 
         return -1;
     }
