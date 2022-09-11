@@ -269,6 +269,7 @@ static int http_header_generate(struct http_req_s *req, struct http_resp_s *resp
     return 0;
 }
 
+#if CONFIG_KEEPALIVE_ENABLE
 static int http_keepalive_parse(char *buf, size_t len, struct http_req_s *req)
 {
     if(buf == NULL || req == NULL)
@@ -285,6 +286,7 @@ static int http_keepalive_parse(char *buf, size_t len, struct http_req_s *req)
 
     return 0;
 }
+#endif
 
 int http_request_parse(char *buf, size_t len, struct http_req_s *req)
 {
@@ -356,7 +358,9 @@ int http_request_parse(char *buf, size_t len, struct http_req_s *req)
         goto exit;
     }
 
+#if CONFIG_KEEPALIVE_ENABLE
     result = http_keepalive_parse(buf, len, req);
+#endif
 
 exit:
     free(dupbuf);
@@ -433,5 +437,9 @@ int http_handler(int conn, char *buf, size_t len)
 
     LOGINF("Request handled successfully");
 
+#if CONFIG_KEEPALIVE_ENABLE
     return req.keepalive;
+#else
+    return 0;
+#endif
 }
