@@ -12,6 +12,7 @@
 #include <pthread.h>
 
 #include "server.h"
+#include "config.h"
 
 struct conn_data_s {
     int conn;
@@ -44,7 +45,7 @@ int server_create(char *addr, int port)
 
     /* Set address */
     sockaddr.sin_family = AF_INET;
-    sockaddr.sin_port = htons(80);
+    sockaddr.sin_port = htons(port);
     if(inet_aton(addr, (struct in_addr *)&sockaddr.sin_addr.s_addr) < 0)
     {
         fprintf(stderr, "server: Fail set address. Result: %s\r\n", strerror(errno));
@@ -68,7 +69,7 @@ int server_create(char *addr, int port)
         return -errno;
     }
 
-    printf("server: has been started. Address %s, port %d...\r\n", addr, port);
+    printf("server: Has been started. Address %s, port %d...\r\n", addr, port);
 
     return sockfd;
 }
@@ -107,7 +108,6 @@ static void *server_conn_handler(void *data)
         keepalive = conn_data->handler(conn_data->conn, buf, received);
     } while(keepalive > 0);
 
-    /* Close connection */
     server_conn_close(conn_data);
 
     /* Exit the thread */
@@ -121,7 +121,7 @@ int server_listen(int sockfd, server_listen_handler_f handler)
     int conn = 0;
     int result = 0;
     pthread_t thread = 0;
-    struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
+    struct timeval tv = { .tv_sec = CONFIG_KEEPALIVE_TIMEOUT_SEC, .tv_usec = 0 };
 
     /* Check if handler function is valid */
     if(handler == NULL)
@@ -147,7 +147,7 @@ int server_listen(int sockfd, server_listen_handler_f handler)
         /* Set connection timout for recv call */
         if(setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
         {
-            fprintf(stderr, "server: Fail to set socket rcvtimeo option. Result: %s\r\n", strerror(errno));
+            fprintf(stderr, "server: Fail to set connection rcvtimeo option. Result: %s\r\n", strerror(errno));
 
             return -errno;
         }
@@ -156,7 +156,7 @@ int server_listen(int sockfd, server_listen_handler_f handler)
         struct conn_data_s *conn_data = malloc(sizeof(struct conn_data_s));
         if(conn_data == NULL)
         {
-            fprintf(stderr, "Connection data allocation fail");
+            fprintf(stderr, "server: Connection data allocation fail");
 
             return -ENOMEM;
         }
@@ -186,7 +186,7 @@ int server_send(int conn, void *buf, size_t len)
     int sendlen = send(conn, buf, len, 0);
     if(sendlen < 0)
     {
-        fprintf(stderr, "Fail to send index.html. Result: %s\r\n", strerror(errno));
+        fprintf(stderr, "server: Fail to send. Result: %s\r\n", strerror(errno));
 
         return -errno;
     }

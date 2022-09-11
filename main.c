@@ -111,7 +111,7 @@ int main(int argc, char **argv)
     /* Start server */
     if(start_server(arguments.addr, arguments.port, http_handler) < 0)
     {
-        fprintf(stderr, "main: fail to start server\r\n");
+        fprintf(stderr, "main: Fail to start server\r\n");
 
         return -1;
     }
