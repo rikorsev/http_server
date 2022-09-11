@@ -8,6 +8,7 @@
 
 #include "server.h"
 #include "http.h"
+#include "config.h"
 #include "log.h"
 
 #define MODULE_NAME "http"
@@ -38,9 +39,7 @@ struct http_resp_s
 
 static int http_send_responce(int conn, struct http_resp_s *resp)
 {
-    #define BUF_LEN 1024
-
-    char buf[BUF_LEN];
+    char buf[CONFIG_OUTPUT_BUFF_LEN] = {0};
     int sendlen = 0;
     int readlen = 0;
 
@@ -52,20 +51,19 @@ static int http_send_responce(int conn, struct http_resp_s *resp)
         return -EINVAL;
     }
 
-    /* Send status */
-    sendlen = server_send(conn, resp->status, strlen(resp->status));
+    /* Copy status to output buffer */
+    strcpy(buf, resp->status);
+    sendlen += strlen(resp->status);
+
+    /* Copy headers to output bufer */
+    strcpy(buf + sendlen, resp->header);
+    sendlen += strlen(resp->header);
+
+    /* Send status and header */
+    sendlen = server_send(conn, buf, sendlen);
     if(sendlen < 0)
     {
-        LOGERR("Fail to send responce. Result: %d", sendlen);
-
-        return sendlen;
-    }
-
-    /* Send header */
-    sendlen = server_send(conn, resp->header, strlen(resp->header));
-    if(sendlen < 0)
-    {
-        LOGERR("Fail to send header. Result %d", sendlen);
+        LOGERR("Fail to send status and header Result %d", sendlen);
 
         return sendlen;
     }
@@ -73,7 +71,7 @@ static int http_send_responce(int conn, struct http_resp_s *resp)
     /* Send file if necessary */
     if(resp->file != NULL)
     {
-        while((readlen = fread(buf, sizeof(char), BUF_LEN, resp->file)) != 0)
+        while((readlen = fread(buf, sizeof(char), CONFIG_OUTPUT_BUFF_LEN, resp->file)) != 0)
         {
             sendlen = server_send(conn, buf, readlen);
             if(sendlen < 0)
@@ -91,8 +89,8 @@ static int http_send_responce(int conn, struct http_resp_s *resp)
 static int http_send_not_found(int conn)
 {
     int result = 0;
-    
-    struct http_resp_s resp = 
+
+    struct http_resp_s resp =
     {
         .status = "HTTP/1.1 404 Not Found\n\n",
         .header = "Not Found\n\n",
@@ -116,7 +114,7 @@ static int http_send_not_found(int conn)
 static int http_send_not_implemented(int conn)
 {
     int result = 0;
-    
+
     struct http_resp_s resp = 
     {
         .status = "HTTP/1.1 501 Not Implemented\n\n",
@@ -141,7 +139,7 @@ static int http_send_not_implemented(int conn)
 static int http_send_bad_request(int conn)
 {
     int result = 0;
-    
+
     struct http_resp_s resp = 
     {
         .status = "HTTP/1.1 400 Bad Request\n\n",
@@ -210,7 +208,7 @@ static enum resource_type_e http_resource_type_get(char *filepath)
         goto exit;
     }
 
-    /* Bu default type is file */
+    /* By default type is file */
     type = RESOURCE_TYPE_FILE;
 
 exit:

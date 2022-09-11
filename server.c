@@ -93,7 +93,7 @@ static void *server_conn_handler(void *data)
 {
     struct conn_data_s *conn_data = (struct conn_data_s *) data;
     ssize_t received = 0;
-    char buf[1024] = {0}; /** @todo: data chunking */
+    char buf[CONFIG_INPUT_BUFF_LEN] = {0}; /** @todo: data chunking */
     int keepalive = 0;
 
     /* Recive data */
