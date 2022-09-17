@@ -2,105 +2,121 @@
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
-
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <sys/time.h>
+#include <stdbool.h>
 
 #include <pthread.h>
 
 #include "server.h"
+#include "tls.h"
+#include "soc.h"
 #include "config.h"
 #include "log.h"
 
 #define MODULE_NAME "server"
 
-struct conn_data_s {
-    int conn;
-    server_listen_handler_f handler;
-};
-
-int server_create(char *addr, int port)
+struct server_s *server_create(bool is_secure)
 {
-    int sockfd = 0;
-    struct sockaddr_in sockaddr = {0};
+    struct server_s *srv = NULL;
 
-    /** @todo: address validation */
-
-    /* Create socket */
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if(sockfd < 0)
+    /* Allocate mamory for server */
+    srv = malloc(sizeof(struct server_s));
+    if (srv == NULL)
     {
-        LOGERR("Fail to create socket. Result: %s", strerror(errno));
+        LOGERR("Fail allocate memory for server object");
 
-        return -errno;
+        return NULL;
     }
 
-    /* Set socket options reuse address to true */
-    if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0)
+    /* Get server context and interface depend on secure option */
+    if (is_secure == true)
     {
-        LOGERR("Fail to set socket reuseaddr option. Result: %s", strerror(errno));
-
-        return -errno;
+        srv->ctx = tls_serv_ctx_alloc();
+        srv->iface = tls_serv_iface_get();
+    }
+    else
+    {
+        srv->ctx = soc_serv_ctx_alloc();
+        srv->iface = soc_serv_iface_get();
     }
 
-    /* Set address */
-    sockaddr.sin_family = AF_INET;
-    sockaddr.sin_port = htons(port);
-    if(inet_aton(addr, (struct in_addr *)&sockaddr.sin_addr.s_addr) < 0)
+    if (srv->ctx == NULL)
     {
-        LOGERR("Fail set address. Result: %s", strerror(errno));
+        LOGERR("Fail allocate memory for server context object");
 
-        return -errno;
+        free(srv);
+
+        return NULL;
     }
 
-    /* Bind socket and address */
-    if(bind(sockfd, (struct sockaddr *) &sockaddr, sizeof(sockaddr)) < 0)
+    if (srv->iface == NULL)
     {
-        LOGERR("Fail to bind. Result: %s", strerror(errno));
+        LOGERR("Fail to get server interface");
 
-        return -errno;
+        free(srv->ctx);
+        free(srv);
+
+        return NULL;
     }
 
-    /* Start listening */
-    if (listen(sockfd, SOMAXCONN) < 0)
-    {
-        LOGERR("Fail to listen. Result: %s\r\n", strerror(errno));
-
-        return -errno;
-    }
-
-    LOGINF("Has been started. Address %s, port %d", addr, port);
-
-    return sockfd;
+    return srv;
 }
 
-static void server_conn_close(struct conn_data_s *conn_data)
+int server_init(struct server_s *srv, char *addr, int port)
 {
-    LOGINF("Connection %d closed", conn_data->conn);
-
-    if(close(conn_data->conn) < 0)
+    if (srv == NULL)
     {
-        LOGERR("Fail close connection. Result: %s", strerror(errno));
+        LOGERR("Invalid argument");
+
+        return -EINVAL;
     }
 
-    free(conn_data);
+    if (srv->iface->init == NULL)
+    {
+        LOGERR("Not implemented");
+
+        return -ENOSYS;
+    }
+
+    return srv->iface->init(srv->ctx, addr, port);
+}
+
+static void server_conn_close(struct conn_s *conn)
+{
+
+    if (conn->iface->close != NULL)
+    {
+        conn->iface->close(conn->ctx);
+    }
+
+    free(conn);
 }
 
 static void *server_conn_handler(void *data)
 {
-    struct conn_data_s *conn_data = (struct conn_data_s *) data;
-    ssize_t received = 0;
+    struct conn_s *conn = (struct conn_s *)data;
+    size_t len = 0;
     char buf[CONFIG_INPUT_BUFF_LEN] = {0}; /** @todo: data chunking */
     int keepalive = 0;
+
+    if (conn == NULL)
+    {
+        LOGERR("Connection object is NULL");
+
+        pthread_exit(NULL);
+    }
+
+    if (conn->iface->recv == NULL)
+    {
+        LOGERR("Read interface is not implemented");
+
+        goto exit;
+    }
 
     /* Recive data */
     do
     {
-        received = recv(conn_data->conn, buf, sizeof(buf), 0);
-        if(received < 0)
+        len = conn->iface->recv(conn->ctx, buf, sizeof(buf));
+        if (len < 0)
         {
             LOGERR("Fail to receive data. Result: %s", strerror(errno));
 
@@ -108,10 +124,11 @@ static void *server_conn_handler(void *data)
         }
 
         /* Handle received data */
-        keepalive = conn_data->handler(conn_data->conn, buf, received);
-    } while(keepalive > 0);
+        keepalive = conn->handler(conn, buf, len);
+    } while (keepalive > 0);
 
-    server_conn_close(conn_data);
+exit:
+    server_conn_close(conn);
 
     /* Exit the thread */
     pthread_exit(NULL);
@@ -119,75 +136,93 @@ static void *server_conn_handler(void *data)
     return NULL;
 }
 
-int server_listen(int sockfd, server_listen_handler_f handler)
+int server_listen(struct server_s *srv, server_listen_handler_f handler)
 {
-    int conn = 0;
+    void *connctx = NULL;
+    struct conn_s *conn = NULL;
+    struct conn_iface_s *conn_iface = NULL;
     int result = 0;
     pthread_t thread = 0;
-    struct timeval tv = { .tv_sec = CONFIG_KEEPALIVE_TIMEOUT_SEC, .tv_usec = 0 };
 
-    /* Check if handler function is valid */
-    if(handler == NULL)
+    /* Check if arguments are valid */
+    if (srv == NULL || handler == NULL)
     {
-        LOGERR("Data handler function is NULL");
+        LOGERR("Invalid argument");
 
         return -EINVAL;
     }
 
-    while(1)
+    /* Check if required interface is available */
+    if (srv->iface->accept == NULL ||
+        srv->iface->conn_iface == NULL)
+    {
+        LOGERR("Required interfaces are not implemented");
+
+        return -ENOSYS;
+    }
+
+    /* Try to get connection interface in advance */
+    conn_iface = srv->iface->conn_iface();
+    if (conn_iface == NULL)
+    {
+        LOGERR("Fail to get connectio interface");
+
+        return -ENOSYS;
+    }
+
+    while (1)
     {
         /* Wait for new connection */
-        conn = accept(sockfd, NULL, NULL);
-        if(conn < 0)
+        connctx = srv->iface->accept(srv->ctx);
+        if (connctx == NULL)
         {
-            LOGERR("Connection fail. Result: %s", strerror(errno));
+            LOGERR("Connection fail");
 
-            return -errno;
+            continue;
         }
 
-        LOGINF("New connection %d", conn);
-
-        /* Set connection timout for recv call */
-        if(setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+        /* Create new connection data */
+        conn = malloc(sizeof(struct conn_s));
+        if (conn == NULL)
         {
-            LOGERR("Fail to set connection rcvtimeo option. Result: %s", strerror(errno));
+            LOGERR("Fail to allocate memory for new connection");
 
-            return -errno;
+            free(connctx);
+
+            continue;
         }
 
-        /* Create new connection data structure */
-        struct conn_data_s *conn_data = malloc(sizeof(struct conn_data_s));
-        if(conn_data == NULL)
-        {
-            LOGERR("Connection data allocation fail");
-
-            return -ENOMEM;
-        }
-
-        /* Set conn data */
-        conn_data->conn = conn;
-        conn_data->handler = handler;
+        conn->ctx = connctx;
+        conn->handler = handler;
+        conn->iface = conn_iface;
 
         /* Create separate thread for connection */
-        result = pthread_create(&thread, NULL, server_conn_handler, conn_data);
-        if(result < 0)
+        result = pthread_create(&thread, NULL, server_conn_handler, conn);
+        if (result < 0)
         {
             LOGERR("Fail to create new connection thread. Result %d", result);
 
             /* Close connection */
-            server_conn_close(conn_data);
+            server_conn_close(conn);
 
-            return result;
+            continue;
         }
     }
 
     return 0;
 }
 
-int server_send(int conn, void *buf, size_t len)
+int server_send(struct conn_s *conn, void *buf, size_t len)
 {
-    int sendlen = send(conn, buf, len, 0);
-    if(sendlen < 0)
+    if (conn->iface->send == NULL)
+    {
+        LOGERR("Write interface is not implemented");
+
+        return -ENOSYS;
+    }
+
+    int sendlen = conn->iface->send(conn->ctx, buf, len);
+    if (sendlen < 0)
     {
         LOGERR("Fail to send. Result: %s", strerror(errno));
 
@@ -197,17 +232,18 @@ int server_send(int conn, void *buf, size_t len)
     return sendlen;
 }
 
-int server_close(int sockfd)
+int server_close(struct server_s *srv)
 {
     /** @todo: close all open threads ? */
 
-    /* Close socket */
-    if(close(sockfd) < 0)
+    if (srv->iface->deinit == NULL)
     {
-        LOGERR("Fail close socket. Result: %s", strerror(errno));
+        LOGERR("Deinit interface is not implemented");
 
-        return -errno;
+        return -ENOSYS;
     }
+
+    srv->iface->deinit(srv->ctx);
 
     return 0;
 }

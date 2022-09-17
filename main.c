@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <argp.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 #include "server.h"
 #include "http.h"
@@ -20,9 +21,10 @@ static char doc[] = "Simple HTTP server writen on C";
 
 /* The options we understand. */
 static struct argp_option options[] = {
-  {"root", 'r', "root", 0, "Rood directory for resources" },
-  {"addr", 'a', "addr", 0, "IP address of the server"},
-  {"port", 'p', "port", 0, "TCP port to access server" },
+  {"root",   'r', "root", 0, "Rood directory for resources" },
+  {"addr",   'a', "addr", 0, "IP address of the server"},
+  {"port",   'p', "port", 0, "TCP port to access server" },
+  {"secure", 's', 0, 0, "Create secure HTTPS connection"},
   { 0 }
 };
 
@@ -32,6 +34,7 @@ struct arguments
     char *root;
     char *addr;
     int port;
+    bool secure;
 };
 
 /* Parse a single option. */
@@ -55,6 +58,10 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
             arguments->port = atoi(arg);
             break;
 
+        case 's':
+            arguments->secure = true;
+            break;
+
         default:
             return ARGP_ERR_UNKNOWN;
     }
@@ -65,27 +72,41 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 /* argp parser. */
 static struct argp argp = { options, parse_opt, NULL, doc };
 
-static int start_server(char *addr, int port, server_listen_handler_f handler)
+static int start_server(char *addr, int port, bool secure, server_listen_handler_f handler)
 {
-    int sockfd = 0;
-    sockfd = server_create(addr, port);
-    if(sockfd < 0)
+    struct server_s *server = NULL;
+    int result = 0;
+
+    server = server_create(secure);
+    if(server == NULL)
     {
-        LOGERR("Fail to create new server. Result %d", sockfd);
-
-        return sockfd;
-    }
-
-    if(server_listen(sockfd, handler) < 0)
-    {
-        LOGERR("Fail to listen");
-
-        server_close(sockfd);
+        LOGERR("Fail to create new server");
 
         return -1;
     }
 
-    return 0;
+    result = server_init(server, addr, port);
+    if(result < 0)
+    {
+        LOGERR("Fail to init server. Result %d", result);
+
+        goto exit;
+    }
+
+    result = server_listen(server, handler);
+    if(result < 0)
+    {
+        LOGERR("Fail to listen. Result %d", result);
+
+        goto exit;
+    }
+
+exit:
+    return server_close(server);
+
+    free(server);
+
+    return result;
 }
 
 int main(int argc, char **argv)
@@ -96,6 +117,7 @@ int main(int argc, char **argv)
     arguments.root = ".";
     arguments.addr = "127.0.0.1";
     arguments.port = 80;
+    arguments.secure = false;
 
     /* Parse our arguments; every option seen by parse_opt will
         be reflected in arguments. */
@@ -104,6 +126,7 @@ int main(int argc, char **argv)
     LOGINF("Root: %s", arguments.root);
     LOGINF("Address: %s", arguments.addr);
     LOGINF("Port: %d", arguments.port);
+    LOGINF("Secure: %s", arguments.secure ? "yes": "no");
 
     /* Change directory to specefied */
     if(chdir(arguments.root) < 0)
@@ -114,7 +137,7 @@ int main(int argc, char **argv)
     }
 
     /* Start server */
-    if(start_server(arguments.addr, arguments.port, http_handler) < 0)
+    if(start_server(arguments.addr, arguments.port, arguments.secure, http_handler) < 0)
     {
         LOGERR("Fail to start server");
 

@@ -37,7 +37,7 @@ struct http_resp_s
     FILE *file;
 };
 
-static int http_send_responce(int conn, struct http_resp_s *resp)
+static int http_send_responce(void *connctx, struct http_resp_s *resp)
 {
     char buf[CONFIG_OUTPUT_BUFF_LEN] = {0};
     int sendlen = 0;
@@ -60,7 +60,7 @@ static int http_send_responce(int conn, struct http_resp_s *resp)
     sendlen += strlen(resp->header);
 
     /* Send status and header */
-    sendlen = server_send(conn, buf, sendlen);
+    sendlen = server_send(connctx, buf, sendlen);
     if(sendlen < 0)
     {
         LOGERR("Fail to send status and header Result %d", sendlen);
@@ -73,7 +73,7 @@ static int http_send_responce(int conn, struct http_resp_s *resp)
     {
         while((readlen = fread(buf, sizeof(char), CONFIG_OUTPUT_BUFF_LEN, resp->file)) != 0)
         {
-            sendlen = server_send(conn, buf, readlen);
+            sendlen = server_send(connctx, buf, readlen);
             if(sendlen < 0)
             {
                 LOGERR("Fail to send file. Result %d", sendlen);
@@ -86,7 +86,7 @@ static int http_send_responce(int conn, struct http_resp_s *resp)
     return 0;
 }
 
-static int http_send_not_found(int conn)
+static int http_send_not_found(void *connctx)
 {
     int result = 0;
 
@@ -100,7 +100,7 @@ static int http_send_not_found(int conn)
     LOGINF("404: page not found");
 
     /* Send responce header */
-    result = http_send_responce(conn, &resp);
+    result = http_send_responce(connctx, &resp);
     if(result < 0)
     {
         LOGERR("Fail to send responce. Result: %d", result);
@@ -111,7 +111,7 @@ static int http_send_not_found(int conn)
     return 0;
 }
 
-static int http_send_not_implemented(int conn)
+static int http_send_not_implemented(void *connctx)
 {
     int result = 0;
 
@@ -125,7 +125,7 @@ static int http_send_not_implemented(int conn)
     LOGINF("501: not implemented");
 
     /* Send responce header */
-    result = http_send_responce(conn, &resp);
+    result = http_send_responce(connctx, &resp);
     if(result < 0)
     {
         LOGERR("Fail to send responce. Result: %d", result);
@@ -136,7 +136,7 @@ static int http_send_not_implemented(int conn)
     return 0;
 }
 
-static int http_send_bad_request(int conn)
+static int http_send_bad_request(void *connctx)
 {
     int result = 0;
 
@@ -150,7 +150,7 @@ static int http_send_bad_request(int conn)
     LOGINF("400: bad request");
 
     /* Send responce header */
-    result = http_send_responce(conn, &resp);
+    result = http_send_responce(connctx, &resp);
     if(result < 0)
     {
         LOGERR("Fail to send responce. Result: %d", result);
@@ -377,20 +377,18 @@ exit:
     return result;
 }
 
-int http_handler(int conn, char *buf, size_t len)
+int http_handler(void *connctx, char *buf, size_t len)
 {
     int result = 0;
     struct http_req_s req = {0};
     struct http_resp_s resp = { .status = "HTTP/1.1 200 OK\n" };
-
-    LOGINF("Request handling started(conn %d)", conn);
 
     result = http_request_parse(buf, len, &req);
     if(result < 0)
     {
         LOGERR("Fail to parse request. Result: %d", result);
 
-        http_send_bad_request(conn);
+        http_send_bad_request(connctx);
 
         return result;
     }
@@ -405,7 +403,7 @@ int http_handler(int conn, char *buf, size_t len)
     {
         LOGERR("%s not implemented\r\n", req.method);
 
-        http_send_not_implemented(conn);
+        http_send_not_implemented(connctx);
 
         return -ENOMSG;
     }
@@ -417,7 +415,7 @@ int http_handler(int conn, char *buf, size_t len)
         LOGERR("Fail to open %s", req.path);
 
         /* send 404 */
-        http_send_not_found(conn);
+        http_send_not_found(connctx);
 
         return -ENOENT;
     }
@@ -434,7 +432,7 @@ int http_handler(int conn, char *buf, size_t len)
     }
 
     /* Send requested file */
-    result = http_send_responce(conn, &resp);
+    result = http_send_responce(connctx, &resp);
     if(result < 0)
     {
         LOGERR("Fail to send responce. Result %d", result);

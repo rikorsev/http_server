@@ -19,6 +19,6 @@
  * 
  * @retval 1 if connection shall remains open, 0 otherwise
  **/
-int http_handler(int conn, char *buf, size_t len);
+int http_handler(void *connctx, char *buf, size_t len);
 
 #endif

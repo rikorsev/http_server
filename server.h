@@ -12,6 +12,9 @@
 #ifndef SERVER_H_
 #define SERVER_H_
 
+#include <stdlib.h>
+#include <stdbool.h>
+
 /**
  * @brief Function handler type that uses to handle incoming data 
  * on top protocol layers such as HTTP, etc.
@@ -23,7 +26,35 @@
  * @retval shall return 1 to keep connection open after handling the request
  * or 0 othervise
  **/
-typedef int (*server_listen_handler_f)(int conn, char *buf, size_t len);
+typedef int (*server_listen_handler_f)(void *connctx, char *buf, size_t len);
+
+struct conn_iface_s
+{
+    int (*recv)(void *connctx, char *buf, size_t len);
+    int (*send)(void *connctx, char *buf, size_t len);
+    void (*close)(void *connctx);
+};
+
+struct server_iface_s
+{
+    int (*init)(void *server, char *addr, int port);
+    void *(*accept)(void *server);
+    void (*deinit)(void *server);
+    struct conn_iface_s *(*conn_iface)(void);
+};
+
+struct server_s
+{ 
+    struct server_iface_s *iface;
+    void *ctx;
+};
+
+struct conn_s
+{
+    struct conn_iface_s *iface;
+    server_listen_handler_f handler;
+    void *ctx;
+};
 
 /**
  * @brief Creates new listener for server based on socket
@@ -37,7 +68,13 @@ typedef int (*server_listen_handler_f)(int conn, char *buf, size_t len);
  * @retval opened socket dile descriptor if everything is fine.
  * Errno value if something goes wrong.
  **/
-int server_create(char *addr, int port);
+struct server_s *server_create(bool is_secure);
+
+/**
+ * TBD
+ **/
+int server_init(struct server_s *srv, char *addr, int port);
+
 
 /**
  * @brief Listen for new connections
@@ -54,7 +91,7 @@ int server_create(char *addr, int port);
  * @warning BE AWARE that the function shall not return after it
  * call according to normal flow.
  **/
-int server_listen(int sockfd, server_listen_handler_f handler);
+int server_listen(struct server_s *srv, server_listen_handler_f handler);
 
 /**
  * @brief Send data to client
@@ -68,15 +105,15 @@ int server_listen(int sockfd, server_listen_handler_f handler);
  * @retval num of sent bytes if everything is ok,
  * errno value in case of error
  **/
-int server_send(int conn, void *buf, size_t len);
+int server_send(struct conn_s *conn, void *buf, size_t len);
 
 /**
  * @brief Close server
  * 
  * @param sockfd[in] - socket file descriptor
  * 
- * @retval zero if case if success, errno value in case of error
+ * @retval zero in case if success, errno value in case of error
  **/
-int server_close(int sockfd);
+int server_close(struct server_s *srv);
 
 #endif
