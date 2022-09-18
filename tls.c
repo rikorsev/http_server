@@ -208,7 +208,6 @@ static void *tls_accept(void *ctx)
 
     mbedtls_ssl_set_timer_cb(&connctx->ssl, &connctx->timer, mbedtls_timing_set_delay,
                                                              mbedtls_timing_get_delay);
-
     result = mbedtls_ssl_session_reset(&connctx->ssl);
     if(result < 0)
     {

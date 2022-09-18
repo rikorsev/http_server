@@ -1,3 +1,5 @@
+![HTTP server architecture](./resources/http_server_arch.drawio.png "HTTP server architecture")
+
 ## Description
 
 Simple HTTP server written on pure C. Able to provide access to static pages and files.
@@ -7,7 +9,9 @@ The solution contains following files/modules:
 | :--- | :--- |
 | main.c | Responcible for parsing user specefied arguments and starts the server with the speceied arguments |
 | config.h | Contain options available for coniguration while compile time (see **Build** section) |
-| server | Responsible for establishe socket connection reciving/transmitting raw data from/to client |
+| server | Represents server abstraction that able to create new connections and pass raw data to upper layer |
+| soc | The module implements TCP communucation based on sockets |
+| tls | The module implements secure TCP communication with TLS implementstion based on **mbedtls** library |
 | http | Responsible for handling HTTP requests |
 | log.h | Provides logging functionality |
 
@@ -41,6 +45,7 @@ Following arguments/options are available to pass it to the server:
 |--root (-r) | $PWD | Root folder that would contais your server resources |
 | --addr (-a) | 127.0.0.1 | IP Address of your server |
 | --port (-p) | 80 | Your server TCP port |
+| -s | false | This flag enables secure connection over TLS which implements HTTPS communication |
 | --help (-h) | NA | Provides you some usefull information |
 | --version | NA | Provides you version of the solution |
 
@@ -51,7 +56,7 @@ $ sudo server
 In that case the solution will by launched with deault options.
 Or you may specify your own options, like:
 ```bash
-$ sudo server --root ~/my_server --addr 192.160.0.199 --port 8080
+$ sudo server --root ~/my_server --addr 192.160.0.199 --port 443 -s
 ```
 
 ## Known issues and limitations
@@ -59,6 +64,4 @@ $ sudo server --root ~/my_server --addr 192.160.0.199 --port 8080
  - Keep-alive works not really fine :)
  - Chunked transfer encoding is not supported
  - Does not work with clients that send each keystroke immediatelly (like putty)
- - HTTPS does not suppored yet
-
-
+ - HTTPS implemented with test certiicates from mbedtls libraries. So browsers may rude on.
