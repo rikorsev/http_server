@@ -1,4 +1,6 @@
-![HTTP server architecture](./resources/http_server_arch.drawio.png "HTTP server architecture")
+<p align="center">
+  <img src="./resources/http_server_arch.drawio.png" />
+</p>
 
 ## Description
 

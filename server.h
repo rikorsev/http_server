@@ -28,61 +28,138 @@
  **/
 typedef int (*server_listen_handler_f)(void *connctx, char *buf, size_t len);
 
+/**
+ * @brief The structure represents connection interface for lower layers like socket/TLS
+ * 
+ **/
 struct conn_iface_s
 {
+    /**
+     * @brief Interface to recive data via connection channel
+     * 
+     * @param connctx[in] - connection context
+     * @param buf[in] - buffer to receive data
+     * @param len[in] - the buffer lenght
+     * 
+     * @retval number of read bytes in case of success, negative value otherwise
+     **/
     int (*recv)(void *connctx, char *buf, size_t len);
+
+    /**
+     * @brief Interface to send data via connection channel
+     * 
+     * @param connctx[in] - connection context
+     * @param buf[in] - buffer to send data
+     * @param len[in] - the buffer lenght
+     * 
+     * @retval number of sent bytes in case of success, negative value otherwise
+     **/
     int (*send)(void *connctx, char *buf, size_t len);
+
+    /**
+     * @brief Interface to close connection channel
+     * 
+     * @param connctx[in] - connection context
+     **/
     void (*close)(void *connctx);
 };
 
+/**
+ * @brief The structure represents server interface for lower layers like sockets/TLS
+ * 
+ **/
 struct server_iface_s
 {
+    /**
+     * @brief Interface to init server, bind it with specified addres and port
+     * 
+     * @param server[in] - server context
+     * @param addr[in] - IP address to assign
+     * @param port[in] - TCP port to assign
+     * 
+     * @retval 0 in case of success, negative value otherwise
+     **/
     int (*init)(void *server, char *addr, int port);
+
+    /**
+     * @brief Interface to wait or new connection
+     * 
+     * @param server[in] - server context
+     * 
+     * @retval pointer to connection context or NULL in case of error
+     **/
     void *(*accept)(void *server);
+
+    /**
+     * @brief Interface to deinit close and free a server
+     * 
+     * @param server[in] - server context
+     **/
     void (*deinit)(void *server);
+    
+    /**
+     * @brief Interface to get connection interface
+     * 
+     * @retval return pointer to connection interface
+     * 
+     * @todo This interface looks not really suitable for the structure.
+     * May be in future it would be better to implement getting of 
+     * connection interface in other way
+     **/
     struct conn_iface_s *(*conn_iface)(void);
 };
 
+/**
+ * @brief The structure represents server context
+ **/
 struct server_s
 { 
-    struct server_iface_s *iface;
-    void *ctx;
-};
-
-struct conn_s
-{
-    struct conn_iface_s *iface;
-    server_listen_handler_f handler;
-    void *ctx;
+    struct server_iface_s *iface; /// pointer to lower layer implementation server interace
+    void *ctx;                    /// pointer to lower layer implementation server context data
 };
 
 /**
- * @brief Creates new listener for server based on socket
+ * @brief The strucutre represents connection context
+ **/
+struct conn_s
+{
+    struct conn_iface_s *iface;      /// pointer to lower layer connection interface
+    server_listen_handler_f handler; /// pointer higher layer data handler
+    void *ctx;                       /// pointer to lower later connection context data
+};
+
+/**
+ * @brief Creates new server object
  * 
- * The function open new socket, bind it with specefied address and port 
- * and start listening
+ * New server object will be created based on is_secure option.
+ * if is secure == true, the server will use TLS implementation,
+ * otherwise regular sockets will be used.
  * 
- * @param addr[in] - server address
- * @param port[in] - server potr
+ * @param is_secure[in] - choose which kind of server will be created,
+ * secure(TLS) or nonsecure(sockets)
  * 
- * @retval opened socket dile descriptor if everything is fine.
- * Errno value if something goes wrong.
+ * @retval pointer to server object(server context) or NULL in case of error
  **/
 struct server_s *server_create(bool is_secure);
 
 /**
- * TBD
+ * @brief Init server object/context
+ * 
+ * @param srv[in]  - server object/context to init
+ * @param addr[in] - server address
+ * @param port[in] - server port
+ * 
+ * @retval 0 in case o success, negative value otherwise
  **/
 int server_init(struct server_s *srv, char *addr, int port);
-
 
 /**
  * @brief Listen for new connections
  * 
  * The function listen for new connections in infinite loop. 
- * If new connection occures it creates separate thread to handle incoming data
+ * If new connection occures, it creates separate thread to handle incoming data
  * 
- * @param sockfd[in] - socket file descriptor.
+ * @param srv[in]     - server object/context
  * @param handler[in] - handler function that should handle incoming data on upper layer
  * 
  * @retval The function should not return back if everything is ok.
@@ -96,9 +173,9 @@ int server_listen(struct server_s *srv, server_listen_handler_f handler);
 /**
  * @brief Send data to client
  * 
- * The function sends data to specific client according to provided connection descriptor
+ * The function sends data to specific client according to provided connection context
  * 
- * @param conn[in] - connection descriptor
+ * @param conn[in] - connection context
  * @param buf[in] - bufer that contains data to send
  * @param len[in] - length of data to send
  * 
@@ -110,7 +187,9 @@ int server_send(struct conn_s *conn, void *buf, size_t len);
 /**
  * @brief Close server
  * 
- * @param sockfd[in] - socket file descriptor
+ * Deinit close and free server resources
+ * 
+ * @param srv[in] - server object/context
  * 
  * @retval zero in case if success, errno value in case of error
  **/

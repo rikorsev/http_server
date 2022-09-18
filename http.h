@@ -13,7 +13,7 @@
  * The function parses incoming request stored in buffer 
  * and handle it according to the requested data.
  * 
- * @param conn[in] - connection descriptor
+ * @param connctx[in] - connection context
  * @param buf[in] - bufer that contains incoming data
  * @param len[in] - lenght of incoming data
  * 
