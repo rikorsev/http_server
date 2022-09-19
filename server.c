@@ -245,5 +245,7 @@ int server_close(struct server_s *srv)
 
     srv->iface->deinit(srv->ctx);
 
+    free(srv);
+
     return 0;
 }

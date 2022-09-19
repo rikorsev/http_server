@@ -3,7 +3,7 @@
  * @brief This module responsible for maintaining communication via sockets
  * 
  * The module do following:
- *  - create bind and listen socket, 
+ *  - create server object/context and init it
  *  - wait for new connection from client and create sepatate thread to handle it
  *  - pass recived data to upper layer/protocol (HTTP, etc)
  *  - provide interface to send a data to client

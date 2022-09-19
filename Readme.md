@@ -66,4 +66,4 @@ $ sudo server --root ~/my_server --addr 192.160.0.199 --port 443 -s
  - Keep-alive works not really fine :)
  - Chunked transfer encoding is not supported
  - Does not work with clients that send each keystroke immediatelly (like putty)
- - HTTPS implemented with test certiicates from mbedtls libraries. So browsers may rude on.
+ - HTTPS implemented with test certificates from mbedtls library. So browsers may rude on it.

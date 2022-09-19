@@ -151,6 +151,8 @@ static void soc_deinit(void *ctx)
 
         return;
     }
+
+    free(servctx);
 }
 
 static int soc_recv(void *ctx, char *buf, size_t len)

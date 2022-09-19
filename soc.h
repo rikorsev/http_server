@@ -4,7 +4,7 @@
 #include "server.h"
 
 /**
- * @brief Provide access to socket server interface inction
+ * @brief Provide access to socket server interface
  * 
  * @retval Pointer to structure that contains socket server interfaces
  **/

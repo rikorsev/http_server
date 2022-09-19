@@ -102,7 +102,7 @@ static int start_server(char *addr, int port, bool secure, server_listen_handler
     }
 
 exit:
-    return server_close(server);
+    server_close(server);
 
     free(server);
 
