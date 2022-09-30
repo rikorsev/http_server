@@ -4,7 +4,7 @@
 #include "server.h"
 
 /**
- * @brief Provide access to TLS server interface inction
+ * @brief Provide access to TLS server interface
  * 
  * @retval Pointer to structure that contains TLS server interfaces
  **/
