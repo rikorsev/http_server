@@ -236,14 +236,10 @@ int server_close(struct server_s *srv)
 {
     /** @todo: close all open threads ? */
 
-    if (srv->iface->deinit == NULL)
+    if (srv->iface->deinit != NULL)
     {
-        LOGERR("Deinit interface is not implemented");
-
-        return -ENOSYS;
+        srv->iface->deinit(srv->ctx);
     }
-
-    srv->iface->deinit(srv->ctx);
 
     free(srv);
 
